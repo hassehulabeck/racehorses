@@ -2,10 +2,19 @@ const express = require('express')
 const app = express()
 const mongodbClient = require('mongodb').MongoClient
 let ObjectId = require('mongodb').ObjectId // Behövs för att söka efter _id.
+const secrets = require('./secrets.js')
+const bodyParser = require('body-parser')
+
+app.use(bodyParser.json())
+
+// Kunna hantera postningar från Postman
+app.use(express.urlencoded({
+    extended: true
+}))
 
 // Uppkopplingsinfo, som skrivs in i URI - se nedan
-const user = encodeURIComponent('admin');
-const password = encodeURIComponent('br0mmabl0cks');
+const user = encodeURIComponent(secrets.user);
+const password = encodeURIComponent(secrets.password);
 
 let url = `mongodb://${user}:${password}@localhost:27017`
 
@@ -17,7 +26,7 @@ app.get('/', (req, res) => {
     }, (err, client) => {
         if (err) throw err
         let db = client.db('stable')
-        findDocuments(db, (result) => {
+        findDocument(db, null, (result) => {
             client.close()
             res.json(result)
         })
@@ -34,8 +43,7 @@ app.get('/:horseid', (req, res) => {
 
         // Kolla horseid-parametern. Om den är ett bona fide-id, så kör vi. Detta blir också en liten säkerhetskontroll, eftersom vi på det sättet slipper skadlig kod.
         if (ObjectId.isValid(req.params.horseid)) {
-            let horseid = new ObjectId(req.params.horseid)
-            findOneDocument(db, horseid, (result) => {
+            findDocument(db, req.params.horseid, (result) => {
                 client.close()
                 res.json(result)
             })
@@ -43,24 +51,46 @@ app.get('/:horseid', (req, res) => {
     })
 })
 
+app.post('/', (req, res) => {
+    mongodbClient.connect(url, {
+        useUnifiedTopology: true
+    }, (err, client) => {
+        if (err) throw err
+        let db = client.db('stable')
 
-const findDocuments = function (db, callback) {
-    // Get the documents collection
-    const collection = db.collection('racehorses');
-    // Find some documents
-    collection.find({}).toArray(function (err, docs) {
-        console.log("Found the following records");
-        console.log(docs)
-        callback(docs);
-    });
-}
+        // Lägg in post-data
+        const collection = db.collection('racehorses')
 
-const findOneDocument = function (db, horseid, callback) {
+        // Utvinn data ur req.body genom att loopa igenom dess egenskaper
+        let document = {}
+        for (const key of Object.keys(req.body)) {
+
+            /* I och med att jag har satt en valideringsregel på att value ska vara av typen int, så måste jag omvandla formulärdatan till rätt format. 
+            Den som vill studera vidare bör titta på Mongoose, som sköter denna del på ett betydligt enklare sätt, men det skadar ju inte att jobba manuellt ibland. */
+            if (key == "value")
+                document[key] = parseInt(req.body[key])
+            else
+                document[key] = req.body[key]
+        }
+
+        collection.insertOne(document, (err, result) => {
+            if (err) throw err
+            res.send(result)
+        })
+    })
+})
+
+
+const findDocument = function (db, horseid = null, callback) {
     const collection = db.collection('racehorses');
+
+    // Horseid or not, here I come...
+    // Antingen är searchquery ett tomt objekt (visa alla), eller så är det ett objekt fyllt av _id och rätt horseid.
+    let searchquery = horseid == null ? {} : {
+        _id: new ObjectId(horseid)
+    }
     // Find some documents
-    collection.find({
-        _id: horseid
-    }).toArray(function (err, docs) {
+    collection.find(searchquery).toArray(function (err, docs) {
         if (err) throw err
         callback(docs);
     });
