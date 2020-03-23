@@ -44,8 +44,23 @@ app.get('/:horseid', (req, res) => {
         // Kolla horseid-parametern. Om den är ett bona fide-id, så kör vi. Detta blir också en liten säkerhetskontroll, eftersom vi på det sättet slipper skadlig kod.
         if (ObjectId.isValid(req.params.horseid)) {
             findDocument(db, req.params.horseid, (result) => {
-                client.close()
-                res.json(result)
+                let fatherId = result[0].father
+                let father
+                console.log(fatherId)
+                if (fatherId != null) {
+                    findDocument(db, fatherId, (fatherResult) => {
+                        father = fatherResult
+                        res.json([result, {
+                            info: "Kolla farsan"
+                        }, father])
+                        client.close()
+
+                    })
+
+                } else {
+                    res.json(result)
+                    client.close()
+                }
             })
         }
     })
